@@ -32,3 +32,25 @@ Give the terminal a bit of room — at least ~12 rows by ~12 columns.
 - The snake speeds up slightly with every point.
 - Running into a wall or into your own body ends the round.
 - Fill the whole board to win.
+
+## Super visualization
+
+The game ships with a set of terminal eye-candy effects (all standard-library
+`curses`, no extra dependencies):
+
+- **Rainbow gradient snake** — the body flows through a colour ramp that
+  travels along the snake as it moves; a bright bold head leads the way. On
+  256-colour terminals it uses a smooth green→cyan ramp, and falls back to a
+  four-colour cycle elsewhere.
+- **Pulsing food** — the food breathes: it cycles colours and blinks between
+  `@` and `*` so it is easy to spot.
+- **Particle bursts** — eating food throws a ring of sparks (`* + . '`) that
+  fly outward and fade over a few frames.
+- **Textured background** — the empty board is drawn as a faint dotted grid.
+- **Live HUD** — the header shows the current score, a persistent **Best**
+  score that survives restarts, and flashes on each bite.
+- **Animated end screen** — the win / game-over banner pulses and the prompt
+  blinks.
+
+Everything degrades gracefully to monochrome on terminals without colour
+support, and drawing is size-safe on very small or exactly-filled terminals.
