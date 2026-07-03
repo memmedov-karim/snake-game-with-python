@@ -17,11 +17,25 @@ python3 snake.py
 
 Give the terminal a bit of room — at least ~12 rows by ~12 columns.
 
+When the game starts you land on a **colour picker** — choose the snake theme
+you want (each option shows a live preview), then press `Enter` to play.
+
 ## Controls
+
+### Colour picker (start screen)
+
+| Key | Action |
+| --- | --- |
+| Arrow keys / `W` `A` `S` `D` | Move the highlight between snake colours |
+| `Enter` / `Space` | Start the game with the highlighted colour |
+| `Q` | Quit |
+
+### In game
 
 | Key | Action |
 | --- | --- |
 | Arrow keys / `W` `A` `S` `D` | Steer the snake |
+| `C` | Cycle the snake colour on the fly |
 | `P` | Pause / resume |
 | `R` | Restart (on the game-over screen) |
 | `Q` | Quit |
@@ -38,10 +52,11 @@ Give the terminal a bit of room — at least ~12 rows by ~12 columns.
 The game ships with a set of terminal eye-candy effects (all standard-library
 `curses`, no extra dependencies):
 
-- **Rainbow gradient snake** — the body flows through a colour ramp that
-  travels along the snake as it moves; a bright bold head leads the way. On
-  256-colour terminals it uses a smooth green→cyan ramp, and falls back to a
-  four-colour cycle elsewhere.
+- **Selectable snake colours** — pick from five themes (Emerald, Fire, Ocean,
+  Violet, Rainbow) on the start screen, and switch live in-game with `C`. Each
+  theme is a flowing colour ramp that travels along the snake as it moves, led
+  by a bright bold head. On 256-colour terminals the ramps are smooth
+  gradients; elsewhere they fall back to a base-colour cycle.
 - **Pulsing food** — the food breathes: it cycles colours and blinks between
   `@` and `*` so it is easy to spot.
 - **Particle bursts** — eating food throws a ring of sparks (`* + . '`) that

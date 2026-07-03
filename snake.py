@@ -70,6 +70,39 @@ _SPARK_DIRS = [
 BACKGROUND_STEP = 2  # draw a dot every N cells
 BACKGROUND_CHAR = ord(".")
 
+# --- Selectable snake colour themes ---------------------------------------
+# Each theme gives the snake body a distinct look. ``ramp`` is a smooth xterm
+# 256-colour gradient used on rich terminals (head -> tail); ``fallback`` is a
+# short cycle of the 8 base curses colours for everything else. Both degrade to
+# monochrome when the terminal has no colour at all.
+SNAKE_THEMES = [
+    {
+        "name": "Emerald",
+        "ramp": [22, 28, 34, 40, 46, 47, 48, 49, 50, 51],  # green -> cyan
+        "fallback": ["GREEN", "CYAN", "BLUE", "MAGENTA"],
+    },
+    {
+        "name": "Fire",
+        "ramp": [52, 88, 124, 160, 196, 202, 208, 214, 220, 226],  # red -> yellow
+        "fallback": ["RED", "YELLOW", "MAGENTA", "WHITE"],
+    },
+    {
+        "name": "Ocean",
+        "ramp": [17, 18, 19, 20, 21, 27, 33, 39, 45, 51],  # deep blue -> cyan
+        "fallback": ["BLUE", "CYAN", "WHITE", "GREEN"],
+    },
+    {
+        "name": "Violet",
+        "ramp": [53, 54, 55, 56, 57, 93, 129, 165, 201, 207],  # purple -> pink
+        "fallback": ["MAGENTA", "BLUE", "RED", "CYAN"],
+    },
+    {
+        "name": "Rainbow",
+        "ramp": [196, 208, 220, 46, 51, 21, 93, 201, 198, 160],  # full spectrum
+        "fallback": ["RED", "YELLOW", "GREEN", "CYAN", "BLUE", "MAGENTA"],
+    },
+]
+
 
 class SnakeGame:
     """Holds the mutable state for a single round of Snake."""
@@ -217,8 +250,13 @@ class Palette:
     def __init__(self):
         self.enabled = False
         self.border = 0
-        # Ordered gradient the snake body flows through (head -> tail).
-        self.snake = [0]
+        # One gradient (head -> tail) per entry in SNAKE_THEMES; the selected
+        # one is exposed via the ``snake`` property below. Defaults to a
+        # monochrome ramp per theme so indexing is safe before ``setup``.
+        self.snake_themes = [[0] for _ in SNAKE_THEMES]
+        # Which theme is active. Steered by the start-screen selector and the
+        # in-game "cycle colour" key.
+        self.theme_index = 0
         # Colours the food pulses between, frame by frame.
         self.food = [0]
         # Bright spark colours for the eat burst.
@@ -226,8 +264,23 @@ class Palette:
         # Faint colour for the dotted background grid.
         self.background = 0
 
+    @property
+    def snake(self):
+        """The colour ramp for the currently selected snake theme."""
+        return self.snake_themes[self.theme_index]
+
+    @property
+    def theme_name(self):
+        return SNAKE_THEMES[self.theme_index]["name"]
+
+    def cycle_theme(self, step=1):
+        """Move the selection to the next/previous snake theme."""
+        self.theme_index = (self.theme_index + step) % len(SNAKE_THEMES)
+
     def setup(self):
         if not curses.has_colors():
+            # Still expose one entry per theme so the selector works in mono.
+            self.snake_themes = [[0] for _ in SNAKE_THEMES]
             return
         curses.start_color()
         try:
@@ -248,18 +301,17 @@ class Palette:
         self.border = make(curses.COLOR_BLUE)
         self.background = make(curses.COLOR_BLUE)
 
-        # A rainbow gradient for the snake body. On richer terminals we build a
-        # smoother custom green->cyan->blue ramp; otherwise cycle base colours.
-        if curses.COLORS >= 256 and curses.can_change_color():
-            ramp = [22, 28, 34, 40, 46, 47, 48, 49, 50, 51]  # xterm green->cyan
-            self.snake = [make(c) for c in ramp]
-        else:
-            self.snake = [
-                make(curses.COLOR_GREEN),
-                make(curses.COLOR_CYAN),
-                make(curses.COLOR_BLUE),
-                make(curses.COLOR_MAGENTA),
-            ]
+        # Build a body gradient for every theme. On richer terminals we use the
+        # smooth 256-colour ramp; otherwise cycle the theme's base colours.
+        rich = curses.COLORS >= 256 and curses.can_change_color()
+        self.snake_themes = []
+        for theme in SNAKE_THEMES:
+            if rich:
+                self.snake_themes.append([make(c) for c in theme["ramp"]])
+            else:
+                self.snake_themes.append(
+                    [make(getattr(curses, "COLOR_" + name)) for name in theme["fallback"]]
+                )
 
         self.food = [
             make(curses.COLOR_RED),
@@ -279,8 +331,8 @@ def _draw(stdscr, game, palette, frame):
 
     # Header line with score, best and controls.
     status = "PAUSED" if game.paused else ("GAME OVER" if game.game_over else "")
-    header = f" Score: {game.score}  Best: {game.best_score}   {status}"
-    controls = "Arrows/WASD move  P pause  Q quit "
+    header = f" Score: {game.score}  Best: {game.best_score}  [{palette.theme_name}]  {status}"
+    controls = "Arrows/WASD move  C colour  P pause  Q quit "
     total_width = game.width + BORDER_COLS
     # Briefly bold the header the moment food is eaten, for a satisfying pop.
     header_attr = curses.A_BOLD if game.eat_flash > 0 else curses.A_NORMAL
@@ -387,6 +439,74 @@ def _center_text(stdscr, row, width, text, attr=curses.A_BOLD):
         pass
 
 
+def _select_theme(stdscr, palette):
+    """Start-screen menu to pick a snake colour. Returns False to quit.
+
+    Up/Down (or W/S) move the highlight, Left/Right cycle too, Enter/Space
+    starts the game and Q quits. Each option previews the actual snake colours.
+    """
+    stdscr.nodelay(False)
+    stdscr.timeout(-1)
+    frame = 0
+    while True:
+        stdscr.erase()
+        screen_h, screen_w = stdscr.getmaxyx()
+        limit = max(0, screen_w - 1)
+
+        title = "S N A K E"
+        subtitle = "Choose your snake colour"
+        _center_text(stdscr, 1, screen_w, title[:limit], curses.A_BOLD)
+        _center_text(stdscr, 2, screen_w, subtitle[:limit], curses.A_DIM)
+
+        # One row per theme, each showing a little animated snake preview so the
+        # player sees the real colours before committing.
+        first_row = 4
+        for i, theme in enumerate(SNAKE_THEMES):
+            row = first_row + i
+            if row >= screen_h - 2:
+                break
+            selected = i == palette.theme_index
+            marker = "> " if selected else "  "
+            name = theme["name"].ljust(9)
+            label = f"{marker}{name} "
+            attr = curses.A_BOLD if selected else curses.A_NORMAL
+            col = max(0, (screen_w - 24) // 2)
+            try:
+                stdscr.addstr(row, col, label[:limit], attr)
+            except curses.error:
+                pass
+            # Draw a short preview snake using this theme's ramp.
+            ramp = palette.snake_themes[i]
+            preview_col = col + len(label)
+            for seg in range(8):
+                ch = ord("O") if seg == 0 else ord("o")
+                grad = (seg + frame // 2) % len(ramp)
+                cattr = ramp[grad] | (curses.A_BOLD if selected else curses.A_NORMAL)
+                _safe_addch(stdscr, row, preview_col + seg, ch, cattr)
+
+        hint = "Up/Down select   Enter start   Q quit"
+        if screen_h - 1 >= first_row + len(SNAKE_THEMES) + 1:
+            _center_text(stdscr, screen_h - 1, screen_w, hint[:limit], curses.A_DIM)
+
+        stdscr.noutrefresh()
+        curses.doupdate()
+
+        # Animate the previews while waiting for a keypress.
+        stdscr.timeout(120)
+        key = stdscr.getch()
+        frame += 1
+        if key in (ord("q"), ord("Q")):
+            return False
+        elif key in (curses.KEY_ENTER, ord("\n"), ord("\r"), ord(" ")):
+            return True
+        elif key in (curses.KEY_UP, ord("w"), ord("W"), curses.KEY_LEFT,
+                     ord("a"), ord("A")):
+            palette.cycle_theme(-1)
+        elif key in (curses.KEY_DOWN, ord("s"), ord("S"), curses.KEY_RIGHT,
+                     ord("d"), ord("D")):
+            palette.cycle_theme(1)
+
+
 def _run(stdscr):
     """curses entry point; owns the main loop."""
     curses.curs_set(0)  # hide the cursor
@@ -417,6 +537,11 @@ def _run(stdscr):
         stdscr.getch()
         return
 
+    # Let the player pick a snake colour before the round begins. Bailing out
+    # of the menu quits the whole game.
+    if not _select_theme(stdscr, palette):
+        return
+
     game = SnakeGame(play_h, play_w)
     frame = 0
 
@@ -434,6 +559,10 @@ def _run(stdscr):
             continue
         elif key in (ord("r"), ord("R")) and game.game_over:
             game.reset()
+            continue
+        elif key in (ord("c"), ord("C")):
+            # Cycle the snake colour live without interrupting the round.
+            palette.cycle_theme(1)
             continue
         elif key in KEY_DIRECTIONS:
             game.set_direction(KEY_DIRECTIONS[key])
